@@ -1,0 +1,4 @@
+-mthumb
+-mcpu=cortex-m4
+-DSTM32F4
+-I/home/dev/git/libopencm3-examples/libopencm3/include/
