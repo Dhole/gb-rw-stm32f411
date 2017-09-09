@@ -245,17 +245,17 @@ bus_read_byte(uint16_t addr)
 	// Set address
 	gpio_port_write(GPIOP_ADDR, addr & 0xffff);
 	// wait some nanoseconds
-	delay_nop(50);
+	//delay_nop(5);
 	gpio_clear(GPIOP_SIGNAL, GPION_CS);
 	// wait ~200ns
 	//REP(2,0,asm("NOP"););
-	delay_nop(50000);
+	delay_nop(5);
 	// read data
 	data = gpio_port_read(GPIOP_DATA) & 0xff;
 	//data = gpio_get(GPIOP_DATA, GPIO0);
 
 	gpio_set(GPIOP_SIGNAL, GPION_CS);
-	delay_nop(500);
+	delay_nop(5);
 
 	return data;
 }
