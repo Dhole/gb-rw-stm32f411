@@ -55,14 +55,14 @@ static void
 gpio_data_setup_output(void)
 {
 	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
-	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLDOWN, GPIO0_7);
+	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO0_7);
 }
 
 static void
 gpio_data_setup_input(void)
 {
 	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
-	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPIO0_7);
+	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN, GPIO0_7);
 }
 
 static void
@@ -93,6 +93,11 @@ gpio_setup(void)
 	gpio_set(GPIOP_SIGNAL, GPION_RESET);
 }
 
+#define READ_BUF_LEN 0x4000
+uint8_t read_buf[2][READ_BUF_LEN];
+uint8_t read_buf_slot;
+volatile uint8_t read_buf_slot_busy;
+
 enum dma_state {READY, BUSY, DONE};
 volatile enum dma_state dma_send_state = READY;
 
@@ -103,6 +108,7 @@ dma1_stream6_isr(void)
 	        // Clear Transfer Complete Interrupt Flag
 		dma_clear_interrupt_flags(DMA1, DMA_STREAM6, DMA_TCIF);
 		dma_send_state = DONE;
+		read_buf_slot_busy--;
 	}
 
 	dma_disable_transfer_complete_interrupt(DMA1, DMA_STREAM6);
@@ -205,13 +211,21 @@ update_state(uint8_t b)
 
 		switch (op.cmd) {
 		case WRITE_RAW:
+			// TODO: Prepare to receive DMA or NACK
+			break;
 		case WRITE_FLASH:
 			// TODO: Prepare to receive DMA or NACK
-		case READ:
+			break;
 		case WRITE:
+			break;
 		case EREASE:
+			break;
+		case READ:
+			if ((op.addr_start > op.addr_end) ||
+			    (op.addr_end - op.addr_start) > READ_BUF_LEN) {
+				break;
+			}
 			buf_push(&op_buf, &op);
-			// TODO: ACK
 			break;
 		default:
 			break;
@@ -234,8 +248,6 @@ usart2_isr(void)
 	}
 }
 
-uint8_t read_buf[0x4000];
-
 static inline uint8_t
 bus_read_byte(uint16_t addr)
 {
@@ -248,14 +260,12 @@ bus_read_byte(uint16_t addr)
 	//delay_nop(5);
 	gpio_clear(GPIOP_SIGNAL, GPION_CS);
 	// wait ~200ns
-	//REP(2,0,asm("NOP"););
-	delay_nop(5);
+	REP(2,5,__asm__("nop"););
 	// read data
 	data = gpio_port_read(GPIOP_DATA) & 0xff;
 	//data = gpio_get(GPIOP_DATA, GPIO0);
 
 	gpio_set(GPIOP_SIGNAL, GPION_CS);
-	delay_nop(5);
 
 	return data;
 }
@@ -283,6 +293,9 @@ main(void)
 
 	buf_init(&op_buf, sizeof(struct op));
 
+	read_buf_slot = 0;
+	read_buf_slot_busy = 0;
+
 	clock_setup();
 	gpio_setup();
 	//usart_setup(115200);
@@ -300,19 +313,17 @@ main(void)
 	while (1) {
 		while (buf_empty(&op_buf));
 		buf_pop(&op_buf, &op);
-		gpio_toggle(GPIOP_LED, GPION_LED);
 
 		switch (op.cmd) {
 		case READ:
-			//bus_read_bytes(0x00, 0x10, read_buf);
-			//read_buf[0] = 'H';
-			//read_buf[1] = 'O';
-			//read_buf[2] = 'L';
-			//read_buf[3] = 'A';
-			bus_read_bytes(op.addr_start, op.addr_end, read_buf);
+			while (read_buf_slot_busy >= 2);
+			read_buf_slot_busy++;
+			bus_read_bytes(op.addr_start, op.addr_end, read_buf[read_buf_slot]);
 			while (dma_send_state == BUSY);
+			gpio_toggle(GPIOP_LED, GPION_LED);
 			dma_send_state = BUSY;
-			usart_send_dma(read_buf, op.addr_end - op.addr_start);
+			usart_send_dma(read_buf[read_buf_slot], op.addr_end - op.addr_start);
+			read_buf_slot = (read_buf_slot + 1) % 2;
 			break;
 		case WRITE:
 			break;

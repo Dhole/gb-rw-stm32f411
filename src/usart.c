@@ -55,6 +55,7 @@ usart_send_dma(uint8_t *data, int size)
 	dma_channel_select(DMA1, DMA_STREAM6, DMA_SxCR_CHSEL_4);
 	dma_enable_stream(DMA1, DMA_STREAM6);
         usart_enable_tx_dma(USART2);
+	dma_enable_transfer_complete_interrupt(DMA1, DMA_STREAM6);
 }
 
 /* USART2_RX uses DMA controller 1 Stream 5 Channel 4. */
@@ -93,6 +94,7 @@ usart_recv_dma(void *data, const int size)
     dma_channel_select(DMA1, DMA_STREAM5, DMA_SxCR_CHSEL_4);
     dma_enable_stream(DMA1, DMA_STREAM5);
     usart_enable_rx_dma(USART2);
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_STREAM5);
 }
 
 void
