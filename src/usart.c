@@ -25,7 +25,7 @@ usart_send_dma_setup(void)
 {
 	dma_stream_reset(DMA1, DMA_STREAM6);
 
-	nvic_set_priority(NVIC_DMA1_STREAM6_IRQ, 1);
+	nvic_set_priority(NVIC_DMA1_STREAM6_IRQ, 0x00);
 	nvic_enable_irq(NVIC_DMA1_STREAM6_IRQ);
 
 	dma_set_peripheral_address(DMA1, DMA_STREAM6, (uint32_t) &USART2_DR);
@@ -57,14 +57,13 @@ usart_send_dma(uint8_t *data, int size)
         usart_enable_tx_dma(USART2);
 }
 
-/* USART2_RX uses DMA controller 1 Stream 7 Channel 6. */
 /* USART2_RX uses DMA controller 1 Stream 5 Channel 4. */
 void
 usart_recv_dma_setup(void)
 {
     dma_stream_reset(DMA1, DMA_STREAM5);
 
-    nvic_set_priority(NVIC_DMA1_STREAM5_IRQ, 1);
+    nvic_set_priority(NVIC_DMA1_STREAM5_IRQ, 0x00);
     nvic_enable_irq(NVIC_DMA1_STREAM5_IRQ);
 
     dma_set_peripheral_address(DMA1, DMA_STREAM5, (uint32_t) &USART2_DR);

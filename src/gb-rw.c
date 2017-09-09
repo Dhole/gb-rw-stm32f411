@@ -4,7 +4,6 @@
 #include <libopencm3/stm32/usart.h>
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/exti.h>
-#include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
 
 #include "gb-rw.h"
@@ -53,6 +52,20 @@ clock_setup(void)
 }
 
 static void
+gpio_data_setup_output(void)
+{
+	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
+	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLDOWN, GPIO0_7);
+}
+
+static void
+gpio_data_setup_input(void)
+{
+	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
+	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPIO0_7);
+}
+
+static void
 gpio_setup(void)
 {
 	/* Setup GPIO pin GPIO5 on GPIO port A for LED. */
@@ -68,7 +81,7 @@ gpio_setup(void)
 	gpio_mode_setup(GPIOP_ADDR, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO0_7 | GPIO8_15);
 
 	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
-	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN, GPIO0_7);
+	gpio_data_setup_input();
 
 	/* Set GPIO pins GPIO{6,7,8,9,10} on GPIO port A for bus signals. */
 	gpio_mode_setup(GPIOP_SIGNAL, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLDOWN,
@@ -80,21 +93,8 @@ gpio_setup(void)
 	gpio_set(GPIOP_SIGNAL, GPION_RESET);
 }
 
-static void
-gpio_data_setup_output(void)
-{
-	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
-	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLDOWN, GPIO0_7);
-}
-
-static void
-gpio_data_setup_input(void)
-{
-	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
-	gpio_mode_setup(GPIOP_DATA, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPIO0_7);
-}
-
-volatile int dma_sent = 0;
+enum dma_state {READY, BUSY, DONE};
+volatile enum dma_state dma_send_state = READY;
 
 void
 dma1_stream6_isr(void)
@@ -102,7 +102,7 @@ dma1_stream6_isr(void)
 	if (dma_get_interrupt_flag(DMA1, DMA_STREAM6, DMA_TCIF)) {
 	        // Clear Transfer Complete Interrupt Flag
 		dma_clear_interrupt_flags(DMA1, DMA_STREAM6, DMA_TCIF);
-		dma_sent = 1;
+		dma_send_state = DONE;
 	}
 
 	dma_disable_transfer_complete_interrupt(DMA1, DMA_STREAM6);
@@ -135,215 +135,153 @@ delay_nop(unsigned int t)
 	}
 }
 
-//static void
-//gblink_sniff_gpio_setup(void)
-//{
-//	// PA0 -> SCK
-//	gpio_mode_setup(GPIOP_SCK, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPION_SCK);
-//	// PC0 -> SIN
-//	gpio_mode_setup(GPIOP_SIN, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPION_SIN);
-//	// PC1 -> SOUT
-//	gpio_mode_setup(GPIOP_SOUT, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPION_SOUT);
-//	// PC2 -> SD
-//	gpio_mode_setup(GPIOP_SD, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPION_SD);
-//
-//	nvic_set_priority(NVIC_EXTI0_IRQ, 0);
-//	nvic_enable_irq(NVIC_EXTI0_IRQ);
-//
-//	exti_select_source(EXTI0, GPIOP_SCK);
-//	//exti_set_trigger(EXTI0, EXTI_TRIGGER_FALLING);
-//	exti_set_trigger(EXTI0, EXTI_TRIGGER_RISING);
-//	exti_enable_request(EXTI0);
-//}
+static void
+usart_irq_setup(void)
+{
+	nvic_set_priority(NVIC_USART2_IRQ, 0x10);
+	nvic_enable_irq(NVIC_USART2_IRQ);
+	usart_enable_rx_interrupt(USART2);
+}
 
-//static void
-//gblink_slave_gpio_setup(void)
-//{
-//	// PA0 -> SCK
-//	gpio_mode_setup(GPIOP_SCK, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPION_SCK);
-//	// PC0 -> SIN
-//	gpio_mode_setup(GPIOP_SIN, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLDOWN, GPION_SIN);
-//	gpio_set_output_options(GPIOP_SIN, GPIO_OTYPE_PP, GPIO_OSPEED_100MHZ, GPION_SIN);
-//	gpio_clear(GPIOP_SIN, GPION_SIN);
-//	// PC1 -> SOUT
-//	gpio_mode_setup(GPIOP_SOUT, GPIO_MODE_INPUT, GPIO_PUPD_NONE, GPION_SOUT);
-//	// PC2 -> SD
-//	//gpio_mode_setup(GPIOP_SD, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLDOWN, GPION_SD);
-//	//gpio_mode_setup(GPIOP_SD, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN, GPION_SD);
-//
-//	//gpio_set(GPIOP_SD, GPION_SD);
-//
-//	nvic_set_priority(NVIC_EXTI0_IRQ, 0);
-//	nvic_enable_irq(NVIC_EXTI0_IRQ);
-//	nvic_set_priority(NVIC_USART2_IRQ, 1);
-//	nvic_enable_irq(NVIC_USART2_IRQ);
-//
-//	exti_select_source(EXTI0, GPIOP_SCK);
-//	exti_set_trigger(EXTI0, EXTI_TRIGGER_BOTH);
-//	exti_enable_request(EXTI0);
-//
-//	usart_enable_rx_interrupt(USART2);
-//}
+struct circular_buf op_buf;
 
-struct circular_buf recv_buf;
+enum state {CMD, ARG0, ARG1, ARG2, ARG3};
+enum state state;
+
+enum cmd {READ, WRITE, WRITE_RAW, WRITE_FLASH, EREASE};
+
+struct op {
+	enum cmd cmd;
+	union {
+		uint16_t addr_start;
+		struct {
+			uint8_t addr_start_lo;
+			uint8_t addr_start_hi;
+		};
+	};
+	union {
+		uint16_t addr_end;
+		struct {
+			uint8_t addr_end_lo;
+			uint8_t addr_end_hi;
+		};
+		uint8_t data;
+	};
+};
+
+static void
+update_state(uint8_t b)
+{
+	static enum cmd cmd;
+	static uint8_t arg[4];
+	static struct op op;
+
+	switch (state) {
+	case CMD:
+		cmd = b;
+		state = ARG0;
+		break;
+	case ARG0:
+		arg[0] = b;
+		state = ARG1;
+		break;
+	case ARG1:
+		arg[1] = b;
+		state = ARG2;
+		break;
+	case ARG2:
+		arg[2] = b;
+		state = ARG3;
+		break;
+	case ARG3:
+		arg[3] = b;
+
+		op.cmd = cmd;
+		op.addr_start_lo = arg[0];
+		op.addr_start_hi = arg[1];
+		//op.data = arg[2];
+		op.addr_end_lo   = arg[2];
+		op.addr_end_hi   = arg[3];
+
+		switch (op.cmd) {
+		case WRITE_RAW:
+		case WRITE_FLASH:
+			// TODO: Prepare to receive DMA or NACK
+		case READ:
+		case WRITE:
+		case EREASE:
+			buf_push(&op_buf, &op);
+			// TODO: ACK
+			break;
+		default:
+			break;
+		}
+
+		state = CMD;
+		break;
+	default:
+		break;
+	}
+}
 
 void
 usart2_isr(void)
 {
-	uint8_t empty;
 	/* Check if we were called because of RXNE. */
 	if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) &&
 	    ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
-		//empty = buf_empty(&recv_buf);
-
-		buf_push(&recv_buf, usart_recv(USART2));
-
-		//if (empty && gb_bit == 0 ) {
-		//	gb_sin = buf_pop(&recv_buf);
-		//}
+		update_state(usart_recv(USART2));
 	}
 }
 
-static void
-tim_setup(void)
-{
-	/* Enable TIM2 clock. */
-	rcc_periph_clock_enable(RCC_TIM2);
-
-	/* Enable TIM2 interrupt. */
-	nvic_enable_irq(NVIC_TIM2_IRQ);
-
-	/* Reset TIM2 peripheral to defaults. */
-	rcc_periph_reset_pulse(RST_TIM2);
-
-	/* Timer global mode:
-	 * - No divider
-	 * - Alignment edge
-	 * - Direction up
-	 * (These are actually default values after reset above, so this call
-	 * is strictly unnecessary, but demos the api for alternative settings)
-	 */
-	timer_set_mode(TIM2, TIM_CR1_CKD_CK_INT,
-		TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
-
-	/*
-	 * Please take note that the clock source for STM32 timers
-	 * might not be the raw APB1/APB2 clocks.  In various conditions they
-	 * are doubled.  See the Reference Manual for full details!
-	 * In our case, TIM2 on APB1 is running at double frequency, so this
-	 * sets the prescaler to have the timer run at 5kHz
-	 */
-	/* Set the prescaler to run at 1MHz */
-	timer_set_prescaler(TIM2, ((rcc_apb1_frequency * 2) / 1000000) - 1);
-
-	/* Set the initual output compare value for OC1. */
-	timer_set_oc_value(TIM2, TIM_OC1, 0);
-
-	/* Disable preload. */
-	timer_disable_preload(TIM2);
-	timer_continuous_mode(TIM2);
-
-	/* count full range, as we'll update compare value continuously */
-	//timer_set_period(TIM2, 8 - 1);
-	timer_set_period(TIM2, 4 - 1);
-}
-
-static inline void
-tim_start(void)
-{
-	/* Counter enable. */
-	timer_enable_counter(TIM2);
-
-	/* Enable Channel 1 compare interrupt to recalculate compare values */
-	timer_enable_irq(TIM2, TIM_DIER_CC1IE);
-}
-
-static inline void
-tim_stop(void)
-{
-	timer_disable_counter(TIM2);
-	timer_disable_irq(TIM2, TIM_DIER_CC1IE);
-}
-
-uint32_t addr;
-uint8_t data;
-uint8_t buf[0x4000];
-volatile uint8_t done;
+uint8_t read_buf[0x4000];
 
 static inline uint8_t
-bus_read(uint16_t addr)
+bus_read_byte(uint16_t addr)
 {
-	uint8_t data;
+	static uint8_t data;
 
 	gpio_clear(GPIOP_SIGNAL, GPION_RD);
 	// Set address
 	gpio_port_write(GPIOP_ADDR, addr & 0xffff);
 	// wait some nanoseconds
-	//delay_nop(5);
+	delay_nop(50);
 	gpio_clear(GPIOP_SIGNAL, GPION_CS);
-	// wait 200ns
-	REP(2,0,asm("NOP"));
+	// wait ~200ns
+	//REP(2,0,asm("NOP"););
+	delay_nop(50000);
 	// read data
 	data = gpio_port_read(GPIOP_DATA) & 0xff;
 	//data = gpio_get(GPIOP_DATA, GPIO0);
 
 	gpio_set(GPIOP_SIGNAL, GPION_CS);
+	delay_nop(500);
 
 	return data;
 }
 
-static inline uint8_t
-bus_write(uint16_t addr, uint8_t data)
+static void
+bus_read_bytes(uint16_t addr_start, uint16_t addr_end, uint8_t *buf)
 {
-
+	int i;
+	for (i = 0; i < (addr_end - addr_start); i++) {
+		buf[i] = bus_read_byte((uint16_t) addr_start + i);
+	}
 }
 
-void
-tim2_isr(void)
+static inline void
+bus_write_byte(uint16_t addr, uint8_t data)
 {
-	if (timer_get_flag(TIM2, TIM_SR_CC1IF)) {
 
-		/* Toggle LED to indicate compare event. */
-		//gpio_toggle(GPIOP_LED, GPION_LED);
-
-		if (addr >= 0x4000) {
-		//if (addr >= 400) {
-			tim_stop();
-			done = 1;
-		} else {
-			gpio_clear(GPIOP_SIGNAL, GPION_RD);
-			// Set address
-			gpio_port_write(GPIOP_ADDR, addr & 0xffff);
-			// wait some nanoseconds
-			//delay_nop(5);
-			gpio_clear(GPIOP_SIGNAL, GPION_CS);
-			// wait 500ns
-			delay_nop(5);
-			// read data
-			data = gpio_port_read(GPIOP_DATA) & 0xff;
-			//data = gpio_get(GPIOP_DATA, GPIO0);
-
-			gpio_set(GPIOP_SIGNAL, GPION_CS);
-
-			//usart_send_blocking(USART2, data);
-			buf[addr] = data;
-			addr++;
-		}
-		//if (addr > 0xffff) {
-		//if (addr > 400) {
-
-		/* Clear compare interrupt flag. */
-		timer_clear_flag(TIM2, TIM_SR_CC1IF);
-	}
 }
 
 int
 main(void)
 {
-	uint8_t opt;
-	uint8_t cont;
+	struct op op;
+	int i;
 
-	buf_clear(&recv_buf);
+	buf_init(&op_buf, sizeof(struct op));
 
 	clock_setup();
 	gpio_setup();
@@ -353,61 +291,41 @@ main(void)
 	usart_send_dma_setup();
 	usart_recv_dma_setup();
 
-	usart_recv(USART2); // Clear initial garbage
+	for (i = 0; i < 10; i++) {
+		usart_recv(USART2); // Clear initial garbage
+	}
+	usart_irq_setup();
 	usart_send_srt_blocking("\nHELLO\n");
 
-	done = 0;
-	addr = 0;
-
-	//gpio_toggle(GPIOP_LED, GPION_LED); /* LED on/off */
-
-	//while (1) {
-	//	opt = usart_recv_blocking(USART2);
-	//	switch (opt) {
-	//	case MODE_SNIFF:
-	//		mode = MODE_SNIFF;
-	//		gblink_sniff_gpio_setup();
-	//		while (1);
-	//		break;
-	//	case SLAVE_PRINTER:
-	//		mode = MODE_SLAVE;
-	//		slave_mode = SLAVE_PRINTER;
-	//		printer_reset_state();
-	//		gblink_slave_gpio_setup();
-	//		while (1);
-	//		break;
-	//	case MODE_SLAVE:
-	//		mode = MODE_SLAVE;
-	//		gblink_slave_gpio_setup();
-	//		while (1);
-	//		break;
-	//	default:
-	//		break;
-	//	}
-	//}
-
-	tim_setup();
-
 	while (1) {
-		opt = usart_recv_blocking(USART2);
+		while (buf_empty(&op_buf));
+		buf_pop(&op_buf, &op);
+		gpio_toggle(GPIOP_LED, GPION_LED);
 
-		switch (opt) {
-		case 's':
-			tim_start();
+		switch (op.cmd) {
+		case READ:
+			//bus_read_bytes(0x00, 0x10, read_buf);
+			//read_buf[0] = 'H';
+			//read_buf[1] = 'O';
+			//read_buf[2] = 'L';
+			//read_buf[3] = 'A';
+			bus_read_bytes(op.addr_start, op.addr_end, read_buf);
+			while (dma_send_state == BUSY);
+			dma_send_state = BUSY;
+			usart_send_dma(read_buf, op.addr_end - op.addr_start);
+			break;
+		case WRITE:
+			break;
+		case WRITE_RAW:
+			break;
+		case WRITE_FLASH:
+			break;
+		case EREASE:
 			break;
 		default:
-			cont = 1;
 			break;
 		}
-		if (cont) {
-			cont = 0;
-			continue;
-		}
-		while (!done);
-		usart_send_dma(buf, 0x4000);
 	}
-
-	while (1);
 
 	return 0;
 }

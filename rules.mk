@@ -43,7 +43,7 @@ STYLECHECK	:= /checkpatch.pl
 STYLECHECKFLAGS	:= --no-tree -f --terse --mailback
 STYLECHECKFILES	:= $(shell find . -name '*.[ch]')
 OPT		:= -Os
-CSTD		?= -std=c99
+CSTD		?= -std=gnu99
 
 
 ###############################################################################
