@@ -78,7 +78,8 @@ gpio_setup(void)
 	gpio_set_af(GPIOP_USART, GPIO_AF7, GPION_USART_TX | GPION_USART_RX);
 
 	/* Setup GPIO pins GPIO{0..15} on GPIO port C for bus address. */
-	gpio_mode_setup(GPIOP_ADDR, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO0_7 | GPIO8_15);
+	gpio_mode_setup(GPIOP_ADDR, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO0_7 | GPIO8_13);
+	gpio_mode_setup(GPIOP_ADDRH, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPION_ADDR14 | GPION_ADDR15);
 
 	/* Setup GPIO pins GPIO{0..7} on GPIO port B for bus data. */
 	gpio_data_setup_input();
@@ -255,17 +256,21 @@ bus_read_byte(uint16_t addr)
 
 	gpio_clear(GPIOP_SIGNAL, GPION_RD);
 	// Set address
-	gpio_port_write(GPIOP_ADDR, addr & 0xffff);
+	gpio_port_write(GPIOP_ADDR, addr);
+	(addr & 0x4000) ? gpio_set(GPIOP_ADDRH, GPION_ADDR14) :  gpio_clear(GPIOP_ADDRH, GPION_ADDR14);
+	(addr & 0x8000) ? gpio_set(GPIOP_ADDRH, GPION_ADDR15) :  gpio_clear(GPIOP_ADDRH, GPION_ADDR15);
 	// wait some nanoseconds
 	//delay_nop(5);
+	//REP(0,5,__asm__("nop"););
 	gpio_clear(GPIOP_SIGNAL, GPION_CS);
 	// wait ~200ns
-	REP(2,5,__asm__("nop"););
+	REP(2,0,__asm__("nop"););
 	// read data
 	data = gpio_port_read(GPIOP_DATA) & 0xff;
 	//data = gpio_get(GPIOP_DATA, GPIO0);
 
 	gpio_set(GPIOP_SIGNAL, GPION_CS);
+	REP(1,0,__asm__("nop"););
 
 	return data;
 }
@@ -309,6 +314,16 @@ main(void)
 	}
 	usart_irq_setup();
 	usart_send_srt_blocking("\nHELLO\n");
+
+	//gpio_port_write(GPIOP_ADDR, 0xffff);
+	//gpio_set(GPIOC, GPIO15);
+	//gpio_set(GPIOC, GPIO14);
+	//gpio_set(GPIOC, GPIO13);
+	//gpio_set(GPIOC, GPIO12);
+	//gpio_set(GPIOP_ADDR, GPIO13);
+	//gpio_set(GPIOP_ADDRH, GPION_ADDR14);
+	//gpio_set(GPIOP_ADDRH, GPION_ADDR15);
+	//while (1);
 
 	while (1) {
 		while (buf_empty(&op_buf));
