@@ -31,3 +31,6 @@ https://stackoverflow.com/questions/8551418/c-preprocessor-macro-for-returning-a
 #define REP(TENS,ONES,X) \
 	REP##TENS##0(X) \
 	REP##ONES(X)
+
+#define NOP_REP(TENS, ONES) \
+	REP(TENS, ONES, __asm("nop");)

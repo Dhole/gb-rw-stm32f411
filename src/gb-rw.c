@@ -249,28 +249,81 @@ usart2_isr(void)
 	}
 }
 
+static inline void
+set_addr(uint16_t addr)
+{
+	gpio_port_write(GPIOP_ADDR, addr);
+	(addr & 0x4000) ? gpio_set(GPIOP_ADDRH, GPION_ADDR14) : gpio_clear(GPIOP_ADDRH, GPION_ADDR14);
+	(addr & 0x8000) ? gpio_set(GPIOP_ADDRH, GPION_ADDR15) : gpio_clear(GPIOP_ADDRH, GPION_ADDR15);
+}
+
+static inline void
+set_data(uint8_t data)
+{
+
+}
+
+static inline uint8_t
+get_data(void)
+{
+	return gpio_port_read(GPIOP_DATA) & 0xff;
+}
+
+static inline void
+set_cs(void)
+{
+	gpio_clear(GPIOP_SIGNAL, GPION_CS);
+}
+
+static inline void
+unset_cs(void)
+{
+	gpio_set(GPIOP_SIGNAL, GPION_CS);
+}
+
+static inline void
+set_rd(void)
+{
+	gpio_clear(GPIOP_SIGNAL, GPION_RD);
+}
+
+static inline void
+unset_rd(void)
+{
+	gpio_set(GPIOP_SIGNAL, GPION_RD);
+}
+
+static inline void
+set_wr(void)
+{
+	gpio_clear(GPIOP_SIGNAL, GPION_WR);
+}
+
+static inline void
+unset_wr(void)
+{
+	gpio_set(GPIOP_SIGNAL, GPION_WR);
+}
+
 static inline uint8_t
 bus_read_byte(uint16_t addr)
 {
 	static uint8_t data;
 
-	gpio_clear(GPIOP_SIGNAL, GPION_RD);
+	set_rd();
 	// Set address
-	gpio_port_write(GPIOP_ADDR, addr);
-	(addr & 0x4000) ? gpio_set(GPIOP_ADDRH, GPION_ADDR14) :  gpio_clear(GPIOP_ADDRH, GPION_ADDR14);
-	(addr & 0x8000) ? gpio_set(GPIOP_ADDRH, GPION_ADDR15) :  gpio_clear(GPIOP_ADDRH, GPION_ADDR15);
+	set_addr(addr);
 	// wait some nanoseconds
-	//delay_nop(5);
-	//REP(0,5,__asm__("nop"););
-	gpio_clear(GPIOP_SIGNAL, GPION_CS);
+	//NOP_REP(0,5);
+	set_cs();
 	// wait ~200ns
-	REP(2,0,__asm__("nop"););
+	NOP_REP(2,0);
 	// read data
-	data = gpio_port_read(GPIOP_DATA) & 0xff;
+	data = get_data();
 	//data = gpio_get(GPIOP_DATA, GPIO0);
 
-	gpio_set(GPIOP_SIGNAL, GPION_CS);
-	REP(1,0,__asm__("nop"););
+	unset_cs();
+	NOP_REP(1,0);
 
 	return data;
 }
