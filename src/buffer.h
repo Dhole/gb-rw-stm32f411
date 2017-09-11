@@ -8,47 +8,46 @@
 
 struct circular_buf {
 	uint8_t buf[BUF_LEN];
-	volatile uint32_t head;
-	volatile uint32_t tail;
-	uint32_t len;
-	uint32_t elem_size;
+	volatile size_t head;
+	volatile size_t tail;
+	size_t len;
+	size_t elem_size;
 };
 
 static inline void
-buf_push(struct circular_buf *buf, void *elem)
+buf_push(struct circular_buf *cbuf, void *elem)
 {
-	//buf->buf[buf->head] = b;
-	memcpy(&buf[buf->head * buf->elem_size], elem, buf->elem_size);
-	buf->head = (buf->head + 1) % buf->len;
+	memcpy(&cbuf->buf[cbuf->head * cbuf->elem_size], elem, cbuf->elem_size);
+	cbuf->head = (cbuf->head + 1) % cbuf->len;
 }
 
 static inline void
-buf_pop(struct circular_buf *buf, void *elem)
+buf_pop(struct circular_buf *cbuf, void *elem)
 {
 	//uint8_t b = buf->buf[buf->tail];
-	memcpy(elem, &buf[buf->tail * buf->elem_size], buf->elem_size);
-	buf->tail = (buf->tail + 1) % buf->len;
+	memcpy(elem, &cbuf->buf[cbuf->tail * cbuf->elem_size], cbuf->elem_size);
+	cbuf->tail = (cbuf->tail + 1) % cbuf->len;
 }
 
 static inline void
-buf_clear(struct circular_buf *buf)
+buf_clear(struct circular_buf *cbuf)
 {
-	buf->head = 0;
-	buf->tail = 0;
+	cbuf->head = 0;
+	cbuf->tail = 0;
 }
 
 static inline void
-buf_init(struct circular_buf *buf, int elem_size)
+buf_init(struct circular_buf *cbuf, size_t elem_size)
 {
-	buf_clear(buf);
-	buf->elem_size = elem_size;
-	buf->len = BUF_LEN / elem_size;
+	buf_clear(cbuf);
+	cbuf->elem_size = elem_size;
+	cbuf->len = (BUF_LEN / elem_size) - 1;
 }
 
 static inline int
-buf_empty(struct circular_buf *buf)
+buf_empty(struct circular_buf *cbuf)
 {
-	return (buf->tail == buf->head);
+	return (cbuf->tail == cbuf->head);
 }
 
 #endif

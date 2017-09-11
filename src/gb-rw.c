@@ -155,7 +155,7 @@ struct circular_buf op_buf;
 enum state {CMD, ARG0, ARG1, ARG2, ARG3};
 enum state state;
 
-enum cmd {READ, WRITE, WRITE_RAW, WRITE_FLASH, EREASE};
+enum cmd {READ, WRITE, WRITE_RAW, WRITE_FLASH, EREASE, RESET};
 
 struct op {
 	enum cmd cmd;
@@ -218,6 +218,7 @@ update_state(uint8_t b)
 			// TODO: Prepare to receive DMA or NACK
 			break;
 		case WRITE:
+			buf_push(&op_buf, &op);
 			break;
 		case EREASE:
 			break;
@@ -226,6 +227,9 @@ update_state(uint8_t b)
 			    (op.addr_end - op.addr_start) > READ_BUF_LEN) {
 				break;
 			}
+			buf_push(&op_buf, &op);
+			break;
+		case RESET:
 			buf_push(&op_buf, &op);
 			break;
 		default:
@@ -260,7 +264,7 @@ set_addr(uint16_t addr)
 static inline void
 set_data(uint8_t data)
 {
-
+	gpio_port_write(GPIOP_DATA, data);
 }
 
 static inline uint8_t
@@ -310,18 +314,19 @@ bus_read_byte(uint16_t addr)
 {
 	static uint8_t data;
 
-	set_rd();
 	// Set address
 	set_addr(addr);
-	// wait some nanoseconds
-	//NOP_REP(0,5);
 	set_cs();
+	// wait some nanoseconds
+	NOP_REP(0,5);
+	set_rd();
 	// wait ~200ns
 	NOP_REP(2,0);
 	// read data
 	data = get_data();
 	//data = gpio_get(GPIOP_DATA, GPIO0);
 
+	unset_rd();
 	unset_cs();
 	NOP_REP(1,0);
 
@@ -340,7 +345,28 @@ bus_read_bytes(uint16_t addr_start, uint16_t addr_end, uint8_t *buf)
 static inline void
 bus_write_byte(uint16_t addr, uint8_t data)
 {
+	// Set address
+	set_addr(addr);
+	//unset_rd();
+	// wait some nanoseconds
+	NOP_REP(0,5);
 
+	set_cs();
+	NOP_REP(0,5);
+	set_wr();
+
+	// set data
+	gpio_data_setup_output();
+	set_data(data);
+	// wait ~200ns
+	NOP_REP(2,0);
+
+	unset_wr();
+	NOP_REP(0,5);
+	gpio_data_setup_input();
+	unset_cs();
+	//set_rd();
+	NOP_REP(0,5);
 }
 
 int
@@ -380,6 +406,7 @@ main(void)
 
 	while (1) {
 		while (buf_empty(&op_buf));
+		gpio_toggle(GPIOP_LED, GPION_LED);
 		buf_pop(&op_buf, &op);
 
 		switch (op.cmd) {
@@ -388,12 +415,12 @@ main(void)
 			read_buf_slot_busy++;
 			bus_read_bytes(op.addr_start, op.addr_end, read_buf[read_buf_slot]);
 			while (dma_send_state == BUSY);
-			gpio_toggle(GPIOP_LED, GPION_LED);
 			dma_send_state = BUSY;
 			usart_send_dma(read_buf[read_buf_slot], op.addr_end - op.addr_start);
 			read_buf_slot = (read_buf_slot + 1) % 2;
 			break;
 		case WRITE:
+			bus_write_byte(op.addr_start, op.data);
 			break;
 		case WRITE_RAW:
 			break;
@@ -401,6 +428,10 @@ main(void)
 			break;
 		case EREASE:
 			break;
+		case RESET:
+			gpio_clear(GPIOP_SIGNAL, GPION_RESET);
+			NOP_REP(1,0);
+			gpio_set(GPIOP_SIGNAL, GPION_RESET);
 		default:
 			break;
 		}
