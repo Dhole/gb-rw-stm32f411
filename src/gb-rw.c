@@ -99,6 +99,12 @@ uint8_t read_buf[2][READ_BUF_LEN];
 uint8_t read_buf_slot;
 volatile uint8_t read_buf_slot_busy;
 
+#define WRITE_BUF_LEN 0x4000
+uint8_t write_buf[2][WRITE_BUF_LEN];
+uint8_t write_buf_slot;
+volatile uint8_t write_buf_slot_busy;
+volatile uint8_t write_buf_slot_ready;
+
 enum dma_state {READY, BUSY, DONE};
 volatile enum dma_state dma_send_state = READY;
 
@@ -117,7 +123,7 @@ dma1_stream6_isr(void)
 	dma_disable_stream(DMA1, DMA_STREAM6);
 }
 
-volatile int dma_recvd = 0;
+volatile enum dma_state dma_recv_state = READY;
 
 void
 dma1_stream5_isr(void)
@@ -125,7 +131,8 @@ dma1_stream5_isr(void)
 	if (dma_get_interrupt_flag(DMA1, DMA_STREAM5, DMA_TCIF)) {
 	        // Clear Transfer Complete Interrupt Flag
 		dma_clear_interrupt_flags(DMA1, DMA_STREAM5, DMA_TCIF);
-		dma_recvd = 1;
+		dma_recv_state = DONE;
+		write_buf_slot_ready++;
 	}
 
 	dma_disable_transfer_complete_interrupt(DMA1, DMA_STREAM5);
@@ -155,7 +162,8 @@ struct circular_buf op_buf;
 enum state {CMD, ARG0, ARG1, ARG2, ARG3};
 enum state state;
 
-enum cmd {READ, WRITE, WRITE_RAW, WRITE_FLASH, EREASE, RESET};
+enum cmd {READ, WRITE, WRITE_RAW, WRITE_FLASH, EREASE, RESET, PING};
+enum cmd_reply {DMA_READY, DMA_NOT_READY, PONG};
 
 struct op {
 	enum cmd cmd;
@@ -174,6 +182,7 @@ struct op {
 		};
 		uint8_t data;
 	};
+	uint8_t buf_slot;
 };
 
 static void
@@ -215,7 +224,21 @@ update_state(uint8_t b)
 			// TODO: Prepare to receive DMA or NACK
 			break;
 		case WRITE_FLASH:
-			// TODO: Prepare to receive DMA or NACK
+			if (((op.addr_start > op.addr_end) ||
+			     (op.addr_end - op.addr_start) > WRITE_BUF_LEN)
+			    || (write_buf_slot_busy >= 2)
+			    || (dma_recv_state == BUSY)
+			   ) {
+				usart_send_blocking(USART2, DMA_NOT_READY);
+				break;
+			}
+			write_buf_slot_busy++;
+			dma_recv_state = BUSY;
+			usart_recv_dma(write_buf[write_buf_slot], op.addr_end - op.addr_start);
+			usart_send_blocking(USART2, DMA_READY);
+			op.buf_slot = write_buf_slot;
+			buf_push(&op_buf, &op);
+			write_buf_slot = (write_buf_slot + 1) % 2;
 			break;
 		case WRITE:
 			buf_push(&op_buf, &op);
@@ -230,6 +253,9 @@ update_state(uint8_t b)
 			buf_push(&op_buf, &op);
 			break;
 		case RESET:
+			buf_push(&op_buf, &op);
+			break;
+		case PING:
 			buf_push(&op_buf, &op);
 			break;
 		default:
@@ -366,7 +392,30 @@ bus_write_byte(uint16_t addr, uint8_t data)
 	gpio_data_setup_input();
 	unset_cs();
 	//set_rd();
-	NOP_REP(0,5);
+	NOP_REP(1,5);
+}
+
+static inline void
+bus_write_flash_byte(uint16_t addr, uint8_t data)
+{
+	bus_write_byte(0x0AAA, 0xA9);
+	bus_write_byte(0x0555, 0x56);
+	bus_write_byte(0x0AAA, 0xA0);
+	bus_write_byte(addr, data);
+	delay_nop(100);
+}
+
+static inline void
+bus_write_flash_bytes(uint16_t addr_start, uint16_t addr_end, uint8_t *buf)
+{
+	int i;
+
+	// For some reason, the first byte may not be written, so we force the
+	// first write to do nothing.
+	bus_write_flash_byte((uint16_t) addr_start, 0xFF);
+	for (i = 0; i < (addr_end - addr_start); i++) {
+		bus_write_flash_byte((uint16_t) addr_start + i, buf[i]);
+	}
 }
 
 int
@@ -379,6 +428,9 @@ main(void)
 
 	read_buf_slot = 0;
 	read_buf_slot_busy = 0;
+	write_buf_slot = 0;
+	write_buf_slot_busy = 0;
+	write_buf_slot_ready = 0;
 
 	clock_setup();
 	gpio_setup();
@@ -425,6 +477,10 @@ main(void)
 		case WRITE_RAW:
 			break;
 		case WRITE_FLASH:
+			while (write_buf_slot_ready == 0);
+			bus_write_flash_bytes(op.addr_start, op.addr_end, write_buf[op.buf_slot]);
+			write_buf_slot_ready--;
+			write_buf_slot_busy--;
 			break;
 		case EREASE:
 			break;
@@ -432,6 +488,10 @@ main(void)
 			gpio_clear(GPIOP_SIGNAL, GPION_RESET);
 			NOP_REP(1,0);
 			gpio_set(GPIOP_SIGNAL, GPION_RESET);
+			break;
+		case PING:
+			usart_send_blocking(USART2, PONG);
+			break;
 		default:
 			break;
 		}

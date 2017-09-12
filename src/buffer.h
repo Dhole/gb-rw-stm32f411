@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define BUF_LEN 1024
+#define BUF_LEN 0x1000
 
 struct circular_buf {
 	uint8_t buf[BUF_LEN];
