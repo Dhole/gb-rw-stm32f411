@@ -221,8 +221,6 @@ update_state(uint8_t b)
 
 		switch (op.cmd) {
 		case WRITE_RAW:
-			// TODO: Prepare to receive DMA or NACK
-			break;
 		case WRITE_FLASH:
 			if (((op.addr_start > op.addr_end) ||
 			     (op.addr_end - op.addr_start) > WRITE_BUF_LEN)
@@ -396,6 +394,16 @@ bus_write_byte(uint16_t addr, uint8_t data)
 }
 
 static inline void
+bus_write_bytes(uint16_t addr_start, uint16_t addr_end, uint8_t *buf)
+{
+	int i;
+
+	for (i = 0; i < (addr_end - addr_start); i++) {
+		bus_write_byte((uint16_t) addr_start + i, buf[i]);
+	}
+}
+
+static inline void
 bus_write_flash_byte(uint16_t addr, uint8_t data)
 {
 	bus_write_byte(0x0AAA, 0xA9);
@@ -475,6 +483,10 @@ main(void)
 			bus_write_byte(op.addr_start, op.data);
 			break;
 		case WRITE_RAW:
+			while (write_buf_slot_ready == 0);
+			bus_write_bytes(op.addr_start, op.addr_end, write_buf[op.buf_slot]);
+			write_buf_slot_ready--;
+			write_buf_slot_busy--;
 			break;
 		case WRITE_FLASH:
 			while (write_buf_slot_ready == 0);
