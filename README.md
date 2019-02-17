@@ -10,6 +10,25 @@ Supported commands are:
 - Reading/Writing SRAM
 - Writing ROM on flash Chinese cartridges
 
+## Building
+
+```
+cd src
+make gb-rw.stlink-flash
+```
+
+## Debugging
+
+```
+openocd
+```
+
+```
+arm-none-eabi-gdb gb-rw.elf
+target extended-remote :3333
+c
+```
+
 ## Details
 
 You can read more about how reprogramming Game Boy Chinese cartridge works in my blog post:
