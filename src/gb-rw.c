@@ -80,6 +80,34 @@ gpio_setup_gb(void)
 }
 
 static void
+gpio_setup_gba_addr(void)
+{
+	/* Setup ADDR GPIO pins as output for 24b address bus. */
+	gpio_mode_setup(GPIOP_GBA_ADDR_0_13, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE,
+			GPIO_0_7 | GPIO_8_13);
+	gpio_mode_setup(GPIOP_GBA_ADDR_14_15, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE,
+		GPION_GBA_ADDR_14 | GPION_GBA_ADDR_15);
+	gpio_mode_setup(GPIOP_GBA_ADDR_16_24, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_0_7);
+}
+
+static void
+gpio_setup_gba_rom_read(void)
+{
+	/* Setup DATA GPIO pins as input for 16b data bus. */
+	gpio_mode_setup(GPIOP_GBA_ROM_DATA_0_13, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN,
+			GPIO_0_7 | GPIO_8_13);
+	gpio_mode_setup(GPIOP_GBA_ROM_DATA_14_15, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN,
+		GPION_GBA_ROM_DATA_14 | GPION_GBA_ROM_DATA_15);
+}
+
+static void
+gpio_setup_gba(void)
+{
+	gpio_setup_gba_addr();
+	gpio_clear(GPIOP_SIGNAL, GPION_CS);
+}
+
+static void
 gpio_setup(void)
 {
 	/* Setup GPIO pin GPIO5 on GPIO port A for LED. */
@@ -101,27 +129,7 @@ gpio_setup(void)
 	gpio_set(GPIOP_SIGNAL, GPION_RD);
 	gpio_set(GPIOP_SIGNAL, GPION_CS);
 	gpio_set(GPIOP_SIGNAL, GPION_RESET);
-}
-
-static void
-gpio_setup_gba_addr(void)
-{
-	/* Setup ADDR GPIO pins as output for 24b address bus. */
-	gpio_mode_setup(GPIOP_GBA_ADDR_0_13, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE,
-			GPIO_0_7 | GPIO_8_13);
-	gpio_mode_setup(GPIOP_GBA_ADDR_14_15, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE,
-		GPION_GBA_ADDR_14 | GPION_GBA_ADDR_15);
-	gpio_mode_setup(GPIOP_GBA_ADDR_16_24, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_0_7);
-}
-
-static void
-gpio_setup_gba_rom_read(void)
-{
-	/* Setup DATA GPIO pins as input for 16b data bus. */
-	gpio_mode_setup(GPIOP_GBA_ROM_DATA_0_13, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN,
-			GPIO_0_7 | GPIO_8_13);
-	gpio_mode_setup(GPIOP_GBA_ROM_DATA_14_15, GPIO_MODE_INPUT, GPIO_PUPD_PULLDOWN,
-		GPION_GBA_ROM_DATA_14 | GPION_GBA_ROM_DATA_15);
+	// gpio_set(GPIOP_SIGNAL, GPION_CS2); // CS2 in gba is RESET in gb
 }
 
 #define READ_BUF_LEN 0x4000
@@ -402,6 +410,18 @@ unset_cs(void)
 }
 
 static inline void
+set_cs2(void)
+{
+	gpio_clear(GPIOP_SIGNAL, GPION_CS2);
+}
+
+static inline void
+unset_cs2(void)
+{
+	gpio_set(GPIOP_SIGNAL, GPION_CS2);
+}
+
+static inline void
 set_rd(void)
 {
 	gpio_clear(GPIOP_SIGNAL, GPION_RD);
@@ -561,40 +581,52 @@ get_gba_rom_data(void)
 	return data;
 }
 
+static inline void
+latch_gba_addr(uint32_t addr)
+{
+	gpio_setup_gba_addr();
+	set_gba_addr(addr);
+	nop_loop(20);
+	set_cs();
+	nop_loop(20);
+	gpio_setup_gba_rom_read();
+}
+
+static inline void
+strobe_rd(void)
+{
+	unset_rd();
+	nop_loop(20);
+	set_rd();
+	nop_loop(50);
+}
+
 static inline uint16_t
 bus_gba_read_word(uint32_t addr)
 {
-	static uint16_t data;
-
-	// Set address
-	set_gba_addr(addr);
-	// wait some nanoseconds
-	NOP_REP(1,0);
-	set_cs();
-	// wait some nanoseconds
-	NOP_REP(2,0);
-	set_gba_addr(0x0000);
-	NOP_REP(2,0);
-	gpio_setup_gba_rom_read();
-	set_rd();
-	// wait ~200ns
-	NOP_REP(2,0);
-	// read data
-	data = get_gba_rom_data();
-	//data = gpio_get(GPIOP_DATA, GPIO0);
-
-	unset_rd();
-	unset_cs();
-	NOP_REP(1,0);
-
-	gpio_setup_gba_addr();
-
-	return data;
+	latch_gba_addr(addr);
+	strobe_rd();
+	return get_gba_rom_data();
 }
-
 
 static inline void
 bus_gba_read_bytes(uint32_t addr_start, uint32_t addr_end, uint8_t *buf)
+{
+	int32_t i;
+	uint16_t word;
+
+	latch_gba_addr(addr_start);
+	for (i = 0; i <= (int) (addr_end - addr_start); i += 2) {
+		strobe_rd();
+		word = get_gba_rom_data();
+		//word = bus_gba_read_word(addr_start + i);
+		buf[i] = (uint8_t) (word & 0x00ff);
+		buf[i+1] = (uint8_t) ((word & 0xff00) >> 8);
+	}
+}
+
+static inline void
+_bus_gba_read_bytes(uint32_t addr_start, uint32_t addr_end, uint8_t *buf)
 {
 	int i;
 	uint16_t word;
@@ -625,9 +657,8 @@ main(void)
 	clock_setup();
 	gpio_setup();
 	//usart_setup(115200);
-	//usart_setup(1152000);
-	usart_setup(2000000);
-	//usart_setup(9600);
+	usart_setup(1152000);
+	//usart_setup(2000000);
 	usart_send_dma_setup();
 	usart_recv_dma_setup();
 
@@ -636,16 +667,6 @@ main(void)
 	}
 	usart_irq_setup();
 	usart_send_srt_blocking("\nHELLO\n");
-
-	//gpio_port_write(GPIOP_ADDR, 0xffff);
-	//gpio_set(GPIOC, GPIO15);
-	//gpio_set(GPIOC, GPIO14);
-	//gpio_set(GPIOC, GPIO13);
-	//gpio_set(GPIOC, GPIO12);
-	//gpio_set(GPIOP_ADDR, GPIO13);
-	//gpio_set(GPIOP_ADDR_14_15, GPION_ADDR_14);
-	//gpio_set(GPIOP_ADDR_14_15, GPION_ADDR_15);
-	//while (1);
 
 	while (1) {
 		while (buf_empty(&op_buf));
@@ -692,7 +713,7 @@ main(void)
 			usart_send_blocking(USART2, PONG);
 			break;
 		case MODE_GBA:
-			gpio_setup_gba_addr();
+			gpio_setup_gba();
 			break;
 		case MODE_GB:
 			gpio_setup_gb();

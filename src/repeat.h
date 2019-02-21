@@ -34,3 +34,14 @@ https://stackoverflow.com/questions/8551418/c-preprocessor-macro-for-returning-a
 
 #define NOP_REP(TENS, ONES) \
 	REP(TENS, ONES, __asm("nop");)
+
+void nop_loop(int n);
+
+void
+nop_loop(int n)
+{
+	int i;
+	for (i = 0; i < n; i++) {
+		__asm("nop");
+	}
+}

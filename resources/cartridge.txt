@@ -1,0 +1,137 @@
+Gameboy Advance cartridge pinout
+--------------------------------
+
+ROM access uses a multiplexed bus. RAM does not, but can only address 64KB.
+
+n   ROM     RAM         description
+--- ------- ----------- -------------------------------------------
+1   VCC     VCC         +3V3
+2   PHI     PHI         clock signal (not required)
+3   ~WR     ~WR         ROM: write word, increase address on rising edge; RAM: write byte
+4   ~RD     ~RD         ROM: read word, increase address on rising edge; RAM: read byte
+5   ~CS     -           latches A0..15
+6   AD0     A0          ROM: multiplexed address/data signals; RAM: address signals
+7   AD1     A1          "
+8   AD2     A2          "
+9   AD3     A3          "
+10  AD4     A4          "
+11  AD5     A5          "
+12  AD6     A6          "
+13  AD7     A7          "
+14  AD8     A8          "
+15  AD9     A9          "
+16  AD10    A10         "
+17  AD11    A11         "
+18  AD12    A12         "
+19  AD13    A13         "
+20  AD14    A14         "
+21  AD15    A15         "
+22  A16     D0          ROM: high address signals should always be accurate, but can't hurt to latch too; RAM: data signals
+23  A17     D1          "
+24  A18     D2          "
+25  A19     D3          "
+26  A20     D4          "
+27  A21     D5          "
+28  A22     D6          "
+29  A23     D7          "
+30  -       ~CS2        selects SRAM
+31  IRQ     IRQ         can be unconnected or tied to GND
+32  GND     GND         ground
+
+
+
+
+
+------------------------------------------------------------------------------
+-- VHDL snippet for GBA ROM emulation
+------------------------------------------------------------------------------
+
+-- entity stuff
+GBACART_PHI		: in std_logic;
+GBACART_WRn		: in std_logic;
+GBACART_RDn		: in std_logic;
+GBACART_CSn		: in std_logic;
+GBACART_AD		: inout std_logic_vector(15 downto 0);
+GBACART_AH		: in std_logic_vector(7 downto 0);
+GBACART_CS2n	: in std_logic;
+GBACART_IRQ		: out std_logic;
+
+
+	bram_gba : RAMB4_S16
+	generic map
+	(
+        INIT_00 => X"19BE52A3217F81C0988B2411AD09E4840A82843D21A29A6951AEFF24EA00002E",		-- test data
+        INIT_01 => X"C08A5694C1094BCE94DFF485BFCEE38233E8C758EC3127F84A4A461020CE0993",
+        INIT_02 => X"008438BF56AE040361C71D23769803FC27A39758619ACAA3734D849FFCA77213",
+        INIT_03 => X"FF34A2F9E2384E0103BE63A92580D66085C0FB97F130956F03FE52FFFD0EA740",
+        INIT_04 => X"07F8D42172AC0A388BE425D6AF3CF087637CC065943A1188CB90007844033EBB",
+        INIT_05 => X"000088000000000000000000009631304A5A46414E41564441204F52455A2D46",
+        INIT_06 => X"E28F0018E59F1154E59FD018E129F000E3A0001FE59FD028E129F000E3A00012",
+        INIT_07 => X"E3A0330103007FA003007E00EAFFFFF2E12FFF11E1A0E00FE59F114CE5810000",
+        INIT_08 => X"E3A02000E0021822E92D400BE14F0000E1A01821E1A01802E5932000E2833C02",
+        INIT_09 => X"1A000020E2110040E28220041A000039E2110004E28220041A000026E2110080",
+        INIT_0A => X"E2110008E28220041A00001AE2110002E28220041A00001DE2110001E2822004",
+        INIT_0B => X"E28220041A000011E2110020E28220041A000014E2110010E28220041A000017",
+        INIT_0C => X"1A000008E2110B01E28220041A00000BE2110C02E28220041A00000EE2110C01",
+        INIT_0D => X"E2110A02E28220041A000002E2110A01E28220041A000005E2110B02E2822004",
+        INIT_0E => X"E129F003E383301FE3C330DFE10F3000E1C310B0E59F106CE1C300B21AFFFFFE",
+        INIT_0F => X"E10F3000E8BD4000E12FFF10E28FE000E92D4000E5910000E0811002E59F1058"
+	)
+	port map
+	(
+		RST => '0',
+		CLK => gba_bram_clk,
+		EN => '1',
+		WE => gba_bram_we,
+		ADDR => gba_bram_addr_lo(7 downto 0),
+		DO => gba_bram_do,
+		DI => GBACART_AD
+	);
+
+
+	gba_bram_clk <= not GBACART_RDn_buf or not GBACART_WRn_buf;
+	gba_bram_addr <= gba_bram_addr_hi & gba_bram_addr_lo;
+	GBACART_IRQ <= '0';
+
+	-- data stuff
+	process (GBACART_WRn_buf, GBACART_RDn_buf, GBACART_CSn_buf, gba_bram_addr, gba_bram_do)
+	begin
+
+		GBACART_AD <= (others => 'Z');
+		if (GBACART_RDn_buf='0' and GBACART_CSn_buf='0') then
+		 	if (gba_bram_addr < X"000100") then					-- 16 bits... so actually 0x200 bytes!
+				GBACART_AD <= gba_bram_do;
+			else
+				GBACART_AD <= (others => '1');					-- garbage :)
+			end if;
+		end if;
+
+		gba_bram_we <= '0';
+		if (GBACART_WRn_buf='0' and GBACART_CSn_buf='0' and gba_bram_addr<X"000100") then
+			gba_bram_we <= '1';
+		end if;
+
+	end process;
+
+	-- buffer
+	process (CLK)
+	begin
+		if (rising_edge(CLK)) then
+			GBACART_RDn_buf <= GBACART_RDn;
+			GBACART_WRn_buf <= GBACART_WRn;
+			GBACART_CSn_buf <= GBACART_CSn;
+		end if;
+	end process;
+	
+	-- latch/counter
+	process (GBACART_CSn_buf, GBACART_RDn_buf)
+	begin
+
+		if (GBACART_CSn_buf='1') then				-- keep latching while high
+			gba_bram_addr_hi <= GBACART_AH;			-- don't need to latch high addresses, but done anyways
+			gba_bram_addr_lo <= GBACART_AD;			-- the multiplexed signals
+		elsif (rising_edge(GBACART_RDn_buf)) then
+			gba_bram_addr_lo <= gba_bram_addr_lo + 1;
+		end if;
+	
+	end process;
