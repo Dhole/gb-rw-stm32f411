@@ -104,7 +104,7 @@ static void
 gpio_setup_gba(void)
 {
 	gpio_setup_gba_addr();
-	gpio_clear(GPIOP_SIGNAL, GPION_CS);
+	//gpio_clear(GPIOP_SIGNAL, GPION_CS);
 }
 
 static void
@@ -573,11 +573,8 @@ static inline uint16_t
 get_gba_rom_data(void)
 {
 	uint16_t data = 0;
-	//data |= gpio_port_read(GPIOP_GBA_ROM_DATA_0_13) & 0x00ff;
 	data |= gpio_port_read(GPIOP_GBA_ROM_DATA_0_13) & 0x3fff;
-	//data |= gpio_port_read(GPIOP_GBA_ROM_DATA_0_13) & 0x3000;
 	data |= (gpio_get(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ADDR_14 | GPION_GBA_ADDR_15) & 0x03) << 14;
-	//data |= 0x0f00;
 	return data;
 }
 
@@ -586,27 +583,34 @@ latch_gba_addr(uint32_t addr)
 {
 	gpio_setup_gba_addr();
 	set_gba_addr(addr);
-	nop_loop(20);
 	set_cs();
-	nop_loop(20);
+	nop_loop(200);
 	gpio_setup_gba_rom_read();
 }
 
 static inline void
-strobe_rd(void)
+unlatch_gba_addr(void)
 {
-	unset_rd();
-	nop_loop(20);
+	unset_cs();
+}
+
+static inline uint16_t
+_bus_gba_read_word(void)
+{
+	uint16_t word;
 	set_rd();
 	nop_loop(50);
+	word = get_gba_rom_data();
+	unset_rd();
+	nop_loop(20);
+	return word;
 }
 
 static inline uint16_t
 bus_gba_read_word(uint32_t addr)
 {
 	latch_gba_addr(addr);
-	strobe_rd();
-	return get_gba_rom_data();
+	return _bus_gba_read_word();
 }
 
 static inline void
@@ -617,26 +621,11 @@ bus_gba_read_bytes(uint32_t addr_start, uint32_t addr_end, uint8_t *buf)
 
 	latch_gba_addr(addr_start);
 	for (i = 0; i <= (int) (addr_end - addr_start); i += 2) {
-		strobe_rd();
-		word = get_gba_rom_data();
-		//word = bus_gba_read_word(addr_start + i);
+		word = _bus_gba_read_word();
 		buf[i] = (uint8_t) (word & 0x00ff);
 		buf[i+1] = (uint8_t) ((word & 0xff00) >> 8);
 	}
-}
-
-static inline void
-_bus_gba_read_bytes(uint32_t addr_start, uint32_t addr_end, uint8_t *buf)
-{
-	int i;
-	uint16_t word;
-	//addr_start |= 0x00020000;
-	//addr_end |= 0x00020000;
-	for (i = 0; i <= (int) (addr_end - addr_start); i += 2) {
-		word = bus_gba_read_word(addr_start + i);
-		buf[i] = (uint8_t) (word & 0x00ff);
-		buf[i+1] = (uint8_t) ((word & 0xff00) >> 8);
-	}
+	unlatch_gba_addr();
 }
 
 int
