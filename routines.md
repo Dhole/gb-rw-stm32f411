@@ -37,7 +37,7 @@ CPU instruction mode: `bx`
 
 ```C
 0x08f80054:
-  goto 0x8f80070;
+  goto 0x08f80070;
 0x08f80058:
   // Instructions that were removed from the original cart to add the jump to
   // 0x08f80054
@@ -48,8 +48,36 @@ CPU instruction mode: `bx`
   goto 0x0807c864; // bx 0x0807c865 ; return back to the game
 ```
 
+Save state from some IO Registers.  Setup IO Registers (disable interrupts,
+mixing, volume and all DMA).
 ```C
-0x8f80070:
+0x08f80070:
+  // push {r2, r3, r4, r5, r6, r7}
+  *0x203fc00 = (u16) *0x4000208;
+  *0x203fc04 = (u16) *0x4000200;
+  *0x203fc06 = (u16) *0x4000082;
+  *0x203fc08 = (u16) *0x4000080;
+  *0x203fc0a = (u16) *0x40000ba;
+  *0x203fc0c = (u16) *0x40000c6;
+  *0x203fc0e = (u16) *0x40000d2;
+  *0x203fc10 = (u16) *0x40000de;
+
+  *0x4000208 = (u16) 0;
+  *0x4000200 = (u16) 0;
+  *0x4000080 = (u16) 0;
+  *0x40000ba = (u16) 0;
+  *0x40000c6 = (u16) 0;
+  *0x40000d2 = (u16) 0;
+  *0x40000de = (u16) 0;
+  *0x4000082 = (u16) 3;
+
+  r1 = (u16) *0x4000084
+  goto 0x08f80180; // run 0x08f801b8 from EWRAM
+```
+
+```C
+0x08f80180:
+  [...]
 ```
 
 ```C
@@ -58,7 +86,7 @@ CPU instruction mode: `bx`
 
   *0x8000000 = 0xf0f0;
   *0x8000154 = 0x9898;
-  if (*0x8000040 == 0x5152) { //goto 0x08f80210;
+  if (*0x8000040 == 0x5152) { // goto 0x08f80210;
     *0x8000000 = 0xf0f0;
     r0 = 0;
     goto 0x08f80230;
@@ -105,20 +133,19 @@ EWRAM
   goto 0x08f80108;
 ```
 
+Write back stored state of IO Registers
 ```C
 0x08f80108:
-  // r0 = 0x4000208
-  // r1 = 0x203fc00
   *0x4000208 = *0x203fc00;
   *0x4000200 = *0x203fc04:
-  r0 = 0x4000000;
-  *0x4000082 = *0x203fc02
-  *0x4000080 = *0x203fc02
-  *0x40000ba = *0x203fc02
-  *0x40000d2 = *0x203fc02
+  *0x4000082 = *0x203fc06;
+  *0x4000080 = *0x203fc08;
+  *0x40000ba = *0x203fc0a;
+  *0x40000c6 = *0x203fc0c;
+  *0x40000d2 = *0x203fc0e;
+  *0x40000de = *0x203fc10;
   // pop {r2, r3, r4, r5, r6, r7}
-  // r1 = 0x08f80059
-  goto 0x08f80059;
+  goto 0x08f80058; // bx 0x08f80059
 ```
 
 EWRAM

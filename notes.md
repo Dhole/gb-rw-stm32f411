@@ -897,3 +897,14 @@ So, at some point 0x08f801b8 is copied from ROM to EWRAM.  Let's watchpoint it t
 |           0x08f80100      b010d0e1       ldrh r1, [r0]             ; arg1                                                       
 \       ,=< 0x08f80104      1d0000ea       b loc.08f80180            ; branches the program counter to dst (pc aka r15)           
 ```
+
+# GBA I/O Map 
+
+0x4000208  2    R/W  IME         Interrupt Master Enable Register
+0x4000200  2    R/W  IE          Interrupt Enable Register
+0x4000082  2    R/W  SOUNDCNT_H  Control Mixing/DMA Control
+0x4000080  2    R/W  SOUNDCNT_L  Control Stereo/Volume/Enable   (NR50, NR51)
+0x40000BA  2    R/W  DMA0CNT_H   DMA 0 Control
+0x40000C6  2    R/W  DMA1CNT_H   DMA 1 Control
+0x40000D2  2    R/W  DMA2CNT_H   DMA 2 Control
+0x40000DE  2    R/W  DMA3CNT_H   DMA 3 Control
