@@ -77,7 +77,7 @@ mixing, volume and all DMA).
 
 ```C
 0x08f80180:
-  [...]
+  // run 0x08f801b8 from EWRAM
 ```
 
 ```C
@@ -122,8 +122,70 @@ EWRAM
 EWRAM
 ```C
 0x08f803f8:
-  [...]
+  *0x8fc0000 = 0xf0f0;
+  *0x8000aaa = 0xaaa9;
+  *0x8000554 = 0x5556;
+
+  *0x8000aaa = 0x8080;
+  *0x8000aaa = 0xaaa9;
+  *0x8000554 = 0x5556;
+
+  *0x8fc0000 = 0x3030;
+
+  0x8f80480(); // bl 0x8f80480
+
+  *0x8fc0000 = 0xf0f0;
+  *0x8000aaa = 0xaaa9;
+  *0x8000554 = 0x5556;
+
+  *0x8000aaa = 0x2020;
+
+  0x8f804e4(); // bl 0x8f804e4
+
+  *0x8fc0000 = 0xf0f0;
+
   goto 0x08f80108;
+
+0x8f80480:
+  for (int i = 0; i < 0x100000; i++) {
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x8000)
+      break;
+    else if (*r6 == 0x2000)
+      continue;
+
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x8000)
+      break;
+  }
+
+  for (int i = 0; i < 0x100000; i++) {
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x80)
+      break;
+    else if (*r6 == 0x20)
+      continue;
+
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x80)
+      break;
+  }
+  return;
+
+0x8f804e4:
+  r2 = 0x8fc0000;
+  r1 = 0xe000000;
+  for (int i = 0; i < 0x8000; i += 2) {
+    r6 = (u16) (*r1[i*2] || *r1[i*2+1] << 8)) // read 2 bytes, 1 byte at a time
+    *r2[i] = 0xa0a0;
+    *r2[i] = r6; // write 2 bytes
+
+    r0 = 0x100;
+    for (int j = 0; j < 0x100; j++) {
+      if (*r2[i] == r6) break;
+    }
+  }
+  return;
 ```
 
 EWRAM
@@ -131,6 +193,47 @@ EWRAM
 0x08f805a4:
   [...]
   goto 0x08f80108;
+
+0x08f80644:
+  for (int i = 0; i < 0x100000; i++) {
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x8000)
+      break;
+    else if (*r6 == 0x2000)
+      continue;
+
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x8000)
+      break;
+  }
+
+  for (int i = 0; i < 0x100000; i++) {
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x80)
+      break;
+    else if (*r6 == 0x20)
+      continue;
+
+    r6 = (u16) *0x8fc0000;
+    if (*r6 != 0x80)
+      break;
+  }
+  return;
+
+0x08f806a8:
+  r2 = 0x8fc0000;
+  r1 = 0xe000000;
+  for (int i = 0; i < 0x8000; i += 2) {
+    r6 = (u16) (*r1[i*2] || *r1[i*2+1] << 8)) // read 2 bytes, 1 byte at a time
+    *r2[i] = 0xa0a0;
+    *r2[i] = r6; // write 2 bytes
+
+    r0 = 0x100;
+    for (int j = 0; j < 0x100; j++) {
+      if (*r2[i] == r6) break;
+    }
+  }
+  return;
 ```
 
 Write back stored state of IO Registers
