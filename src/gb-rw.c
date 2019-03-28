@@ -203,8 +203,8 @@ enum state state;
 //enum mode {GB, GBA};
 //enum mode mode;
 
-enum cmd {READ, WRITE, WRITE_RAW, WRITE_FLASH, EREASE, RESET, PING,
-	MODE_GBA, MODE_GB, READ_GBA_ROM};
+enum cmd {READ = 0, WRITE = 1, WRITE_RAW = 2, WRITE_FLASH = 3, ERASE = 4, RESET = 5, PING = 6,
+	MODE_GBA = 7, MODE_GB = 8, READ_GBA_ROM = 9, WRITE_GBA_ROM = 10};
 enum cmd_reply {DMA_READY, DMA_NOT_READY, PONG};
 
 struct op {
@@ -235,6 +235,11 @@ struct op {
 			uint8_t addr_end_24_mi;
 			uint8_t addr_end_24_hi;
 		};
+		uint16_t data_16;
+		struct {
+			uint8_t data_16_lo;
+			uint8_t data_16_hi;
+		};
 	};
 	uint8_t buf_slot; // 1B
 };
@@ -242,10 +247,14 @@ struct op {
 static bool
 cmd_is_gba(enum cmd cmd)
 {
-	if (cmd == READ_GBA_ROM) {
+	switch (cmd) {
+	case READ_GBA_ROM:
+	case WRITE_GBA_ROM:
 		return true;
-	} else {
+		break;
+	default:
 		return false;
+		break;
 	}
 }
 
@@ -312,7 +321,7 @@ update_state(uint8_t b)
 		case WRITE:
 			buf_push(&op_buf, &op);
 			break;
-		case EREASE:
+		case ERASE:
 			break;
 		case READ:
 			if ((op.addr_start > op.addr_end) ||
@@ -344,14 +353,22 @@ update_state(uint8_t b)
 		op.addr_start_24_lo = arg[0];
 		op.addr_start_24_mi = arg[1];
 		op.addr_start_24_hi = arg[2];
-
-		op.addr_end_24 = 0; // We need to clear MSB byte
-		op.addr_end_24_lo   = arg[3];
-		op.addr_end_24_mi   = arg[4];
-		op.addr_end_24_hi   = arg[5];
+		op.addr_start_24 <<= 1;
 
 		switch (op.cmd) {
 		case READ_GBA_ROM:
+			op.addr_end_24 = 0; // We need to clear MSB byte
+			op.addr_end_24_lo   = arg[3];
+			op.addr_end_24_mi   = arg[4];
+			op.addr_end_24_hi   = arg[5];
+			op.addr_end_24 = (op.addr_end_24 + 1) << 1;
+
+			buf_push(&op_buf, &op);
+			break;
+		case WRITE_GBA_ROM:
+			op.data_16_lo = arg[3];
+			op.data_16_hi = arg[4];
+
 			buf_push(&op_buf, &op);
 			break;
 		default:
@@ -573,9 +590,19 @@ static inline uint16_t
 get_gba_rom_data(void)
 {
 	uint16_t data = 0;
-	data |= gpio_port_read(GPIOP_GBA_ROM_DATA_0_13) & 0x3fff;
-	data |= (gpio_get(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ADDR_14 | GPION_GBA_ADDR_15) & 0x03) << 14;
+	data |= gpio_port_read(GPIOP_GBA_ROM_DATA_0_13) & 0x3fff; // & (0xffff >> 2)
+	data |= (gpio_get(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ADDR_14 | GPION_GBA_ADDR_15) & 0x03) << 14; // (1 << 0 | 1 << 1)
 	return data;
+}
+
+static inline void
+set_gba_rom_data(uint16_t data)
+{
+	gpio_port_write(GPIOP_GBA_ROM_DATA_0_13, data);
+	(data & (1 << 14)) ? gpio_set(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ROM_DATA_14) :
+		gpio_clear(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ROM_DATA_14);
+	(data & (1 << 15)) ? gpio_set(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ROM_DATA_15) :
+		gpio_clear(GPIOP_GBA_ROM_DATA_14_15, GPION_GBA_ROM_DATA_15);
 }
 
 static inline void
@@ -585,7 +612,6 @@ latch_gba_addr(uint32_t addr)
 	set_gba_addr(addr);
 	set_cs();
 	nop_loop(200);
-	gpio_setup_gba_rom_read();
 }
 
 static inline void
@@ -609,8 +635,24 @@ _bus_gba_read_word(void)
 static inline uint16_t
 bus_gba_read_word(uint32_t addr)
 {
+	uint16_t word;
 	latch_gba_addr(addr);
-	return _bus_gba_read_word();
+	gpio_setup_gba_rom_read();
+	word =  _bus_gba_read_word();
+	unlatch_gba_addr();
+	return word;
+}
+
+static inline void
+bus_gba_write_word(uint32_t addr, uint16_t word)
+{
+	latch_gba_addr(addr);
+	set_wr();
+	nop_loop(50);
+	set_gba_rom_data(word);
+	unset_wr();
+	nop_loop(20);
+	unlatch_gba_addr();
 }
 
 static inline void
@@ -620,6 +662,7 @@ bus_gba_read_bytes(uint32_t addr_start, uint32_t addr_end, uint8_t *buf)
 	uint16_t word;
 
 	latch_gba_addr(addr_start);
+	gpio_setup_gba_rom_read();
 	for (i = 0; i <= (int) (addr_end - addr_start); i += 2) {
 		word = _bus_gba_read_word();
 		buf[i] = (uint8_t) (word & 0x00ff);
@@ -691,7 +734,7 @@ main(void)
 			write_buf_slot_ready--;
 			write_buf_slot_busy--;
 			break;
-		case EREASE:
+		case ERASE:
 			break;
 		case RESET:
 			gpio_clear(GPIOP_SIGNAL, GPION_RESET);
@@ -708,10 +751,14 @@ main(void)
 			gpio_setup_gb();
 			break;
 		case READ_GBA_ROM:
-			bus_gba_read_bytes(((uint32_t) op.addr_start_24) << 1,
-					   ((uint32_t) op.addr_end_24) << 1, read_buf[0]);
+			bus_gba_read_bytes(op.addr_start_24,
+					   op.addr_end_24, read_buf[0]);
 			usart_send_bytes_blocking(read_buf[0],
-						  (op.addr_end_24 - op.addr_start_24 + 1)*2);
+						  op.addr_end_24 - op.addr_start_24);
+			break;
+		case WRITE_GBA_ROM:
+			bus_gba_write_word(op.addr_start_24, op.data_16);
+			break;
 		default:
 			break;
 		}
