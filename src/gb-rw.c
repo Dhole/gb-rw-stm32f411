@@ -654,14 +654,14 @@ latch_gba_addr_fast(uint32_t addr)
 	gpio_setup_gba_addr();
 	set_gba_addr(addr);
 	set_cs();
-	nop_loop(50); // Tested on Kingdom Hearts flash cart
+	nop_loop(20); // Tested on Kingdom Hearts flash cart
 }
 
 static inline void
 unlatch_gba_addr(void)
 {
 	unset_cs();
-	nop_loop(50);
+	nop_loop(10);
 }
 
 static inline uint16_t
@@ -812,7 +812,6 @@ cmd_write_gba_flash_f3(uint32_t addr_start, uint32_t addr_end, uint8_t *_buf)
 		_bus_gba_write_word(0xff);
 		_bus_gba_write_word(0x40);
 		unlatch_gba_addr();
-		nop_loop(20);
 
 		uint16_from_le(&word, _buf[i], _buf[i+1]);
 		//latch_gba_addr_fast(addr);
