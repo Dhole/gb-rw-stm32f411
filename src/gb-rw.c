@@ -654,7 +654,7 @@ latch_gba_addr_fast(uint32_t addr)
 	gpio_setup_gba_addr();
 	set_gba_addr(addr);
 	set_cs();
-	nop_loop(150); // Tested on Kingdom Hearts flash cart
+	nop_loop(50); // Tested on Kingdom Hearts flash cart
 }
 
 static inline void
@@ -796,23 +796,23 @@ cmd_write_gba_flash_f3(uint32_t addr_start, uint32_t addr_end, uint8_t *_buf)
 	for (i = 0; i < (addr_end - addr_start); i += 2) {
 		addr = addr_start + i;
 
-		// latch_gba_addr_fast(addr_start);
-		// _bus_gba_write_word(0xff);
-		// _bus_gba_write_word(0x70);
+		latch_gba_addr_fast(addr_start);
+		_bus_gba_write_word(0xff);
+		_bus_gba_write_word(0x70);
 		// unlatch_gba_addr();
 		// nop_loop(20);
 
-		bus_gba_write_word_fast(addr, 0xff);
-		bus_gba_write_word_fast(addr, 0x70);
-		 while (bus_gba_read_word_fast(addr) != 0x80);
-
+		// bus_gba_write_word_fast(addr, 0xff);
+		// bus_gba_write_word_fast(addr, 0x70);
 		// while (bus_gba_read_word_fast(addr) != 0x80);
 
+		while (_bus_gba_read_word() != 0x80);
+
 		// latch_gba_addr_fast(addr_start);
-		bus_gba_write_word_fast(addr, 0xff);
-		bus_gba_write_word_fast(addr, 0x40);
-		// unlatch_gba_addr();
-		// nop_loop(20);
+		_bus_gba_write_word(0xff);
+		_bus_gba_write_word(0x40);
+		unlatch_gba_addr();
+		nop_loop(20);
 
 		uint16_from_le(&word, _buf[i], _buf[i+1]);
 		//latch_gba_addr_fast(addr);
