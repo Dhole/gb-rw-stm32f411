@@ -8,8 +8,10 @@
 
 #include "gb-rw.h"
 #include "usart.h"
-#include "buffer.h"
+// #include "buffer.h"
 #include "repeat.h"
+
+const char *ACK = "A";
 
 /* STM32F411-Nucleo at 96 MHz */
 const struct rcc_clock_scale rcc_hse_8mhz_3v3_96mhz = {
@@ -132,17 +134,18 @@ gpio_setup(void)
 	// gpio_set(GPIOP_SIGNAL, GPION_CS2); // CS2 in gba is RESET in gb
 }
 
-#define READ_BUF_LEN 0x4000
-uint8_t read_buf[2][READ_BUF_LEN];
-uint8_t read_buf_slot;
-volatile uint8_t read_buf_slot_busy;
+// #define READ_BUF_LEN 0x4000
+// uint8_t read_buf[2][READ_BUF_LEN];
+// uint8_t read_buf_slot;
+// volatile uint8_t read_buf_slot_busy;
+//
+// #define WRITE_BUF_LEN 0x4000
+// uint8_t write_buf[2][WRITE_BUF_LEN];
+// uint8_t write_buf_slot;
+// volatile uint8_t write_buf_slot_busy;
+// volatile uint8_t write_buf_slot_ready;
 
-#define WRITE_BUF_LEN 0x4000
-uint8_t write_buf[2][WRITE_BUF_LEN];
-uint8_t write_buf_slot;
-volatile uint8_t write_buf_slot_busy;
-volatile uint8_t write_buf_slot_ready;
-
+/*
 enum dma_state {READY, BUSY, DONE};
 volatile enum dma_state dma_send_state = READY;
 
@@ -177,6 +180,7 @@ dma1_stream5_isr(void)
 	usart_disable_rx_dma(USART2);
 	dma_disable_stream(DMA1, DMA_STREAM5);
 }
+*/
 
 static inline void
 delay_nop(unsigned int t)
@@ -187,6 +191,7 @@ delay_nop(unsigned int t)
 	}
 }
 
+/*
 static void
 usart_irq_setup(void)
 {
@@ -194,70 +199,96 @@ usart_irq_setup(void)
 	nvic_enable_irq(NVIC_USART2_IRQ);
 	usart_enable_rx_interrupt(USART2);
 }
+*/
 
-struct circular_buf op_buf;
+// struct circular_buf op_buf;
 
-enum state {CMD, ARG0, ARG1, ARG2, ARG3, ARG4, ARG5};
-enum state state;
+// enum state {CMD, ARG0, ARG1, ARG2, ARG3, ARG4, ARG5};
+// enum state state;
 
 //enum mode {GB, GBA};
 //enum mode mode;
 
 enum cmd {READ = 0, WRITE = 1, WRITE_RAW = 2, WRITE_FLASH = 3, ERASE = 4, RESET = 5, PING = 6,
-	MODE_GBA = 7, MODE_GB = 8, READ_GBA_ROM = 9, WRITE_GBA_ROM = 10};
-enum cmd_reply {DMA_READY, DMA_NOT_READY, PONG};
+	MODE_GBA = 7, MODE_GB = 8, READ_GBA_ROM = 9, WRITE_GBA_ROM = 10, WRITE_GBA_FLASH = 11,
+	READ_GBA_WORD = 12};
+// enum cmd_reply {DMA_READY, DMA_NOT_READY, PONG};
+enum flash_type {F3 = 3};
 
-struct op {
-	enum cmd cmd; // 1B
-	union { // 2B
-		uint16_t addr_start;
-		struct {
-			uint8_t addr_start_lo;
-			uint8_t addr_start_hi;
-		};
-		uint32_t addr_start_24;
-		struct {
-			uint8_t addr_start_24_lo;
-			uint8_t addr_start_24_mi;
-			uint8_t addr_start_24_hi;
-		};
-	};
-	union { // 2B
-		uint16_t addr_end;
-		struct {
-			uint8_t addr_end_lo;
-			uint8_t addr_end_hi;
-		};
-		uint8_t data;
-		uint32_t addr_end_24;
-		struct {
-			uint8_t addr_end_24_lo;
-			uint8_t addr_end_24_mi;
-			uint8_t addr_end_24_hi;
-		};
-		uint16_t data_16;
-		struct {
-			uint8_t data_16_lo;
-			uint8_t data_16_hi;
-		};
-	};
-	uint8_t buf_slot; // 1B
-};
+// struct op {
+// 	enum cmd cmd; // 1B
+// 	union { // 2B
+// 		uint16_t addr_start;
+// 		struct {
+// 			uint8_t addr_start_lo;
+// 			uint8_t addr_start_hi;
+// 		};
+// 		uint32_t addr_start_24;
+// 		struct {
+// 			uint8_t addr_start_24_lo;
+// 			uint8_t addr_start_24_mi;
+// 			uint8_t addr_start_24_hi;
+// 		};
+// 	};
+// 	union { // 2B
+// 		uint16_t addr_end;
+// 		struct {
+// 			uint8_t addr_end_lo;
+// 			uint8_t addr_end_hi;
+// 		};
+// 		uint8_t data;
+// 		uint32_t addr_end_24;
+// 		struct {
+// 			uint8_t addr_end_24_lo;
+// 			uint8_t addr_end_24_mi;
+// 			uint8_t addr_end_24_hi;
+// 		};
+// 		uint16_t data_16;
+// 		struct {
+// 			uint8_t data_16_lo;
+// 			uint8_t data_16_hi;
+// 		};
+// 	};
+// 	uint8_t buf_slot; // 1B
+// };
 
-static bool
-cmd_is_gba(enum cmd cmd)
-{
-	switch (cmd) {
-	case READ_GBA_ROM:
-	case WRITE_GBA_ROM:
-		return true;
-		break;
-	default:
-		return false;
-		break;
-	}
+// static bool
+// cmd_is_gba(enum cmd cmd)
+// {
+// 	switch (cmd) {
+// 	case READ_GBA_ROM:
+// 	case WRITE_GBA_ROM:
+// 		return true;
+// 		break;
+// 	default:
+// 		return false;
+// 		break;
+// 	}
+// }
+
+static void
+uint16_from_le(uint16_t *v, uint8_t v0, uint8_t v1) {
+	*v = 0;
+	*v |= ((uint32_t)v0) << (0*8);
+	*v |= ((uint32_t)v1) << (1*8);
 }
 
+static void
+uint16_to_le(uint16_t v, uint8_t *vs) {
+	vs[0] = (uint8_t) ((v >> (0*8)) & 0xff);
+	vs[1] = (uint8_t) ((v >> (1*8)) & 0xff);
+}
+
+static void
+uint32_from_le(uint32_t *v, uint8_t v0, uint8_t v1, uint8_t v2, uint8_t v3) {
+	*v = 0;
+	*v |= ((uint32_t)v0) << (0*8);
+	*v |= ((uint32_t)v1) << (1*8);
+	*v |= ((uint32_t)v2) << (2*8);
+	*v |= ((uint32_t)v3) << (3*8);
+}
+
+/*
 static void
 update_state(uint8_t b)
 {
@@ -381,16 +412,19 @@ update_state(uint8_t b)
 		break;
 	}
 }
+*/
 
+/*
 void
 usart2_isr(void)
 {
-	/* Check if we were called because of RXNE. */
+	// Check if we were called because of RXNE.
 	if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) &&
 	    ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
 		update_state(usart_recv(USART2));
 	}
 }
+*/
 
 static inline void
 set_addr(uint16_t addr)
@@ -671,25 +705,118 @@ bus_gba_read_bytes(uint32_t addr_start, uint32_t addr_end, uint8_t *buf)
 	unlatch_gba_addr();
 }
 
+#define BUF_LEN 0x8000
+uint8_t buf[BUF_LEN];
+
+static bool
+cmd_read_gba_rom(uint8_t argc, uint8_t *argv)
+{
+	if (argc-1 != 6) { return false; }
+	uint32_t addr_start, addr_end;
+	uint32_from_le(&addr_start, argv[1], argv[2], argv[3], 0x00);
+	addr_start <<= 1;
+	uint32_from_le(&addr_end, argv[4], argv[5], argv[6], 0x00);
+	addr_end = (addr_end + 1) << 1;
+
+	bus_gba_read_bytes(addr_start, addr_end, buf);
+	usart_send_bytes_blocking(buf, addr_end - addr_start);
+	return true;
+}
+
+static bool
+cmd_read_gba_word(uint8_t argc, uint8_t *argv)
+{
+	if (argc-1 != 3) { return false; }
+	uint32_t addr;
+	uint32_from_le(&addr, argv[1], argv[2], argv[3], 0x00);
+	addr <<= 1;
+
+	uint16_t word;
+	uint8_t word_le[2];
+	word = bus_gba_read_word(addr);
+	uint16_to_le(word, word_le);
+	usart_send_bytes_blocking(word_le, 2);
+	return true;
+}
+
+static bool
+cmd_write_gba_rom(uint8_t argc, uint8_t *argv)
+{
+	if (argc-1 != 5) { return false; }
+	uint32_t addr;
+	uint16_t data;
+	uint32_from_le(&addr, argv[1], argv[2], argv[3], 0x00);
+	addr <<= 1;
+	uint16_from_le(&data, argv[4], argv[5]);
+
+	bus_gba_write_word(addr, data);
+	return true;
+}
+
+static void
+cmd_write_gba_flash_f3(uint32_t addr_start, uint32_t addr_end, uint8_t *_buf)
+{
+	uint32_t addr, i;
+	uint16_t word;
+	for (i = 0; i < (addr_end - addr_start); i += 2) {
+		addr = addr_start + i;
+		bus_gba_write_word(addr, 0xff);
+		bus_gba_write_word(addr, 0x70);
+
+		while (bus_gba_read_word(addr) != 0x80);
+
+		bus_gba_write_word(addr, 0xff);
+		bus_gba_write_word(addr, 0x40);
+
+		uint16_from_le(&word, _buf[i], _buf[i+1]);
+		bus_gba_write_word(addr, word);
+
+		while (bus_gba_read_word(addr) != 0x80);
+	}
+	bus_gba_write_word(addr_start, 0xff);
+}
+
+static bool
+cmd_write_gba_flash(uint8_t argc, uint8_t *argv) {
+	if (argc-1 != 7) { return false; }
+	uint32_t addr_start, addr_end;
+	enum flash_type flash_type;
+	uint32_from_le(&addr_start, argv[1], argv[2], argv[3], 0x00);
+	addr_start <<= 1;
+	uint32_from_le(&addr_end, argv[4], argv[5], argv[6], 0x00);
+	addr_end = (addr_end + 1) << 1;
+	flash_type = argv[7];
+
+	usart_recv_bytes_blocking(buf, addr_end - addr_start);
+	switch (flash_type) {
+	case F3:
+		cmd_write_gba_flash_f3(addr_start, addr_end, buf);
+		break;
+	default:
+		break;
+	}
+	return true;
+}
+
 int
 main(void)
 {
-	struct op op;
 	int i;
 
-	buf_init(&op_buf, sizeof(struct op));
+	// buf_init(&op_buf, sizeof(struct op));
 
-	read_buf_slot = 0;
-	read_buf_slot_busy = 0;
-	write_buf_slot = 0;
-	write_buf_slot_busy = 0;
-	write_buf_slot_ready = 0;
-	//mode = GBA;
+	// read_buf_slot = 0;
+	// read_buf_slot_busy = 0;
+	// write_buf_slot = 0;
+	// write_buf_slot_busy = 0;
+	// write_buf_slot_ready = 0;
+	// mode = GBA;
 
 	clock_setup();
 	gpio_setup();
 	//usart_setup(115200);
-	usart_setup(1152000);
+	usart_setup(921600);
+	// usart_setup(1152000);
 	//usart_setup(2000000);
 	usart_send_dma_setup();
 	usart_recv_dma_setup();
@@ -697,72 +824,51 @@ main(void)
 	for (i = 0; i < 10; i++) {
 		usart_recv(USART2); // Clear initial garbage
 	}
-	usart_irq_setup();
+	// usart_irq_setup();
 	usart_send_srt_blocking("\nHELLO\n");
 
+	// enum cmd cmd;
+	uint8_t argc = 0;
+	uint8_t argv[10];
+	uint8_t b;
+	bool ok;
 	while (1) {
-		while (buf_empty(&op_buf));
-		gpio_toggle(GPIOP_LED, GPION_LED);
-		buf_pop(&op_buf, &op);
+		b = usart_recv_blocking(USART2);
 
-		switch (op.cmd) {
-		case READ:
-			while (read_buf_slot_busy >= 2);
-			read_buf_slot_busy++;
-			bus_read_bytes(op.addr_start, op.addr_end,
-				       read_buf[read_buf_slot]);
-			while (dma_send_state == BUSY);
-			dma_send_state = BUSY;
-			usart_send_dma(read_buf[read_buf_slot],
-				       op.addr_end - op.addr_start);
-			read_buf_slot = (read_buf_slot + 1) % 2;
-			break;
-		case WRITE:
-			bus_write_byte(op.addr_start, op.data);
-			break;
-		case WRITE_RAW:
-			while (write_buf_slot_ready == 0);
-			bus_write_bytes(op.addr_start, op.addr_end,
-					write_buf[op.buf_slot]);
-			write_buf_slot_ready--;
-			write_buf_slot_busy--;
-			break;
-		case WRITE_FLASH:
-			while (write_buf_slot_ready == 0);
-			bus_write_flash_bytes(op.addr_start, op.addr_end,
-					      write_buf[op.buf_slot]);
-			write_buf_slot_ready--;
-			write_buf_slot_busy--;
-			break;
-		case ERASE:
-			break;
-		case RESET:
-			gpio_clear(GPIOP_SIGNAL, GPION_RESET);
-			NOP_REP(1,0);
-			gpio_set(GPIOP_SIGNAL, GPION_RESET);
-			break;
-		case PING:
-			usart_send_blocking(USART2, PONG);
-			break;
+		argv[argc] = b;
+		argc++;
+
+		switch (argv[0]) {
 		case MODE_GBA:
 			gpio_setup_gba();
+			ok = true;
 			break;
 		case MODE_GB:
 			gpio_setup_gb();
+			ok = true;
 			break;
 		case READ_GBA_ROM:
-			bus_gba_read_bytes(op.addr_start_24,
-					   op.addr_end_24, read_buf[0]);
-			usart_send_bytes_blocking(read_buf[0],
-						  op.addr_end_24 - op.addr_start_24);
+			ok = cmd_read_gba_rom(argc, argv);
+			break;
+		case READ_GBA_WORD:
+			ok = cmd_read_gba_word(argc, argv);
 			break;
 		case WRITE_GBA_ROM:
-			bus_gba_write_word(op.addr_start_24, op.data_16);
+			ok = cmd_write_gba_rom(argc, argv);
+			break;
+		case WRITE_GBA_FLASH:
+			ok = cmd_write_gba_flash(argc, argv);
 			break;
 		default:
+			ok = true;
 			break;
 		}
+		if (ok) {
+			argc = 0;
+			gpio_toggle(GPIOP_LED, GPION_LED);
+			usart_send_srt_blocking(ACK);
+		}
 	}
-
 	return 0;
 }
+
